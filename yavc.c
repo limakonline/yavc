@@ -17,9 +17,9 @@
 
 #define CTRL_KEY(k) ((k) & 0x1f) // 00011111
 #define ABUF_INIT {NULL, 0}
-#define NOTVIM_VERSION "0.0.1"
-#define NOTVIM_TAB_STOP 8
-#define NOTVIM_QUIT_TIMES 2
+#define YAVC_VERSION "0.0.1"
+#define YAVC_TAB_STOP 8
+#define YAVC_QUIT_TIMES 2
 
 
 typedef struct erow {
@@ -32,6 +32,8 @@ typedef struct erow {
 
 int editorRowRxToCx(erow *row, int rx);
 char *editorPrompt(char *prompt, void (*callback)(char *, int));
+void editorUpdateSyntax(erow *row);
+int editorSyntaxToColor(int hl);
 
 struct editorConfig {
     int cx, cy;
@@ -70,7 +72,7 @@ enum editorKey {
 enum editorHightlight {
     HL_NORMAL = 0,
     HL_NUMBER
-}
+};
 
 void abAppend(struct abuf *ab, const char *s, int len) {
     char *new = realloc(ab->b, ab->len + len);
@@ -132,13 +134,13 @@ void editorUpdateRow(erow *row) {
     }
 
     free(row->render);
-    row->render = malloc(row->size + tabs*(NOTVIM_TAB_STOP - 1) + 1);
+    row->render = malloc(row->size + tabs*(YAVC_TAB_STOP - 1) + 1);
 
     int idx = 0;
     for(j = 0; j < row->size; j++) {
         if (row->chars[j] == '\t') {
             row->render[idx++] = ' ';
-            while (idx % NOTVIM_TAB_STOP != 0) row->render[idx++] = ' ';
+            while (idx % YAVC_TAB_STOP != 0) row->render[idx++] = ' ';
         } else {
             row->render[idx++] = row->chars[j];
         }
@@ -146,6 +148,8 @@ void editorUpdateRow(erow *row) {
 
     row->render[idx] = '\0';
     row->rsize = idx;
+
+    editorUpdateSyntax(row);
 }
 
 void editorInsertRow(int at, char *s, size_t len) {
@@ -388,7 +392,7 @@ void editorDrawRows(struct abuf *ab) {
             if (E.numrows == 0 && y == E.screenrows / 3) {
                 char welcome[80];
                 int welcomelen = snprintf(welcome, sizeof(welcome),
-                        "EVim editor -- version %s", NOTVIM_VERSION);
+                        "EVim editor -- version %s", YAVC_VERSION);
                 if(welcomelen > E.screencols) welcomelen = E.screencols;
                 int padding = (E.screencols - welcomelen) / 2;
                 if (padding) {
@@ -405,16 +409,28 @@ void editorDrawRows(struct abuf *ab) {
            if (len < 0) len = 0;
            if (len > E.screencols) len = E.screencols;
            char *c = &E.row[filerow].render[E.coloff];
+           unsigned char *hl = &E.row[filerow].hl[E.coloff];
+           int current_color = -1;
            int j;
            for (j = 0; j < len; j++) {
-               if (isdigit(c[j])) {
-                   abAppend(ab, "\x1b[31m", 5);
+               if (hl[j] == HL_NORMAL) {
+                   if (current_color != -1) {
+                       abAppend(ab, "\x1b[39m", 5);
+                       current_color = -1;
+                   }
                    abAppend(ab, &c[j], 1);
-                   abAppend(ab, "\x1b[39m", 5);
-               } else { 
+               } else {
+                   int color = editorSyntaxToColor(hl[j]);
+                   if (color != current_color) {
+                       current_color = color;
+                       char buf[16];
+                       int clen = snprintf(buf, sizeof(buf), "\x1b[%dm", color);
+                       abAppend(ab, buf, clen);
+                   }
                    abAppend(ab, &c[j], 1);
                }
            }
+           abAppend(ab, "\x1b[39m", 5);
         }
 
         abAppend(ab, "\x1b[K", 3);
@@ -461,7 +477,7 @@ int editorRowCxToRx(erow *row, int cx) {
     int j;
     for(j = 0; j < cx; j++) {
         if (row->chars[j] == '\t')
-            rx += (NOTVIM_TAB_STOP - 1) - (rx % NOTVIM_TAB_STOP);
+            rx += (YAVC_TAB_STOP - 1) - (rx % YAVC_TAB_STOP);
         rx++;
     }
     return rx;
@@ -473,7 +489,7 @@ int editorRowRxToCx(erow *row, int rx) {
 
     for (cx = 0; cx < row->size; cx++) {
         if (row->chars[cx] == '\t')
-            cur_rx += (NOTVIM_TAB_STOP - 1) - (cur_rx % NOTVIM_TAB_STOP);
+            cur_rx += (YAVC_TAB_STOP - 1) - (cur_rx % YAVC_TAB_STOP);
         cur_rx++;
 
         if (cur_rx > rx) return cx;
@@ -663,7 +679,7 @@ char *editorPrompt(char *prompt, void (*callback)(char *, int)) {
 }
 
 void editorProcessKeypress(void) {
-    static int quit_times = NOTVIM_QUIT_TIMES;
+    static int quit_times = YAVC_QUIT_TIMES;
 
     int c = editorReadKey();
 
@@ -734,7 +750,7 @@ void editorProcessKeypress(void) {
             editorInsertChar(c);
             break;
     }
-    quit_times = NOTVIM_QUIT_TIMES;
+    quit_times = YAVC_QUIT_TIMES;
 }
 
 int getCursorPosition(int *rows, int *cols) {
@@ -769,7 +785,7 @@ int getWindowSize(int *rows, int *cols) {
     }
 }
 
-void editorUpdateSyntax(eror *row) {
+void editorUpdateSyntax(erow *row) {
     row->hl = realloc(row->hl, row->rsize);
     memset(row->hl, HL_NORMAL, row->rsize);
 
@@ -778,6 +794,13 @@ void editorUpdateSyntax(eror *row) {
         if(isdigit(row->render[i])) {
             row->hl[i] = HL_NUMBER;
         }
+    }
+}
+
+int editorSyntaxToColor(int hl) {
+    switch(hl) {
+        case HL_NUMBER: return 31;
+        default: return 37;
     }
 }
 

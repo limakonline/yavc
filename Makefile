@@ -1,2 +1,2 @@
-notvim: notvim.c
-	$(CC) notvim.c -o out/notvim -Wall -Wextra -pedantic -std=c99
+yavc: yavc.c
+	$(CC) yavc.c -o out/yavc -Wall -Wextra -pedantic -std=c99
