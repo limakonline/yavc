@@ -1,6 +1,7 @@
 #### YAVC - Yet Another Vim Clone
 
 ### Description
-This is my attempt to learn the C language.
+This is my first attempt to learn the C language.
+
 I just follow the tutorial [create own editor](https://viewsourcecode.org/snaptoken/kilo/index.html)
 
