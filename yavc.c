@@ -49,6 +49,7 @@ int editorRowRxToCx(erow *row, int rx);
 char *editorPrompt(char *prompt, void (*callback)(char *, int));
 void editorUpdateSyntax(erow *row);
 int editorSyntaxToColor(int hl);
+int editorSyntaxToColorRb(int hl);
 void editorSelectSyntaxHighlight(void);
 
 struct editorConfig {
@@ -121,12 +122,29 @@ char *C_HL_keywords[] = {
     "void|", NULL
 };
 
+char *RB_HL_extensions[] = { ".rb", NULL};
+char *RB_HL_keywords[] = {
+    "_ENCODING__", "__LINE__", "__FILE__", "BEGIN", "END", "alias","and", "begin",
+    "break", "case", "class","def", "defined?", "do", "else", "elsif", "end",
+    "ensure","false", "for", "if", "in", "module", "next", "nil", "not", "or",
+    "redo", "rescue", "require", "require_relative", "retry", "return", "self",
+    "super", "then", "true", "undef", "unless", "until", "when", "while",
+    "yield", NULL
+};
+
 struct editorSyntax HLDB[] = {
     {
         "c",
         C_HL_extensions,
         C_HL_keywords,
         "//", "/*", "*/",
+        HL_HIGHLIGHT_NUMBERS | HL_HIGHLIGHT_STRINGS
+    },
+    {
+        "rb",
+        RB_HL_extensions,
+        RB_HL_keywords,
+        "#", NULL, NULL,
         HL_HIGHLIGHT_NUMBERS | HL_HIGHLIGHT_STRINGS
     },
 };
@@ -149,7 +167,7 @@ void enableRawMode(void) {
     atexit(disableRawMode);
 
     struct termios raw = E.orig_termios;
-    
+
     raw.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
     raw.c_oflag &= ~(OPOST);
     raw.c_cflag &= ~(CS8);
@@ -495,7 +513,8 @@ void editorDrawRows(struct abuf *ab) {
                    }
                    abAppend(ab, &c[j], 1);
                } else {
-                   int color = editorSyntaxToColor(hl[j]);
+                   int color = !strcmp(E.syntax->filetype, "rb") ? editorSyntaxToColorRb(hl[j]) : editorSyntaxToColor(hl[j]);
+
                    if (color != current_color) {
                        current_color = color;
                        char buf[16];
@@ -981,6 +1000,18 @@ void editorUpdateSyntax(erow *row) {
         editorUpdateSyntax(&E.row[row->idx + 1]);
 }
 
+int editorSyntaxToColorRb(int hl) {
+    switch(hl) {
+        case HL_NUMBER: return 31;
+        case HL_KEYWORD1: return 32;
+        case HL_KEYWORD2: return 33;
+        case HL_MATCH: return 34;
+        case HL_STRING: return 35;
+        case HL_COMMENT: return 41;
+        default: return 37;
+    }
+}
+
 int editorSyntaxToColor(int hl) {
     switch(hl) {
         case HL_NUMBER: return 31;
@@ -998,7 +1029,7 @@ void editorSelectSyntaxHighlight(void) {
     E.syntax = NULL;
     if (E.filename == NULL) return;
 
-    char *ext = strrchr(E.filename, '.');
+    char *ext = strrchr(E.filename, '.'); // look for last ocurence of '.'
 
     for(unsigned int j = 0; j < HLDB_ENTRIES; j++) {
         struct editorSyntax *s = &HLDB[j];
@@ -1007,7 +1038,7 @@ void editorSelectSyntaxHighlight(void) {
         while (s->filematch[i]) {
             int is_ext = (s->filematch[i][0] == '.');
             if ((is_ext && ext && !strcmp(ext, s->filematch[i])) ||
-                    (!is_ext && strstr(E.filename, s->filematch[i]))) {
+                    (!is_ext && strstr(E.filename, s->filematch[i]))) { // serach for (place_search, search_term)
                 E.syntax = s;
 
                 int filerow;
